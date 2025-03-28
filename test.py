@@ -79,7 +79,7 @@ def procesar_mitad(imagen_original, lado='Izquierda'):
     print(f"\nResultados para la botella en la mitad {lado}:")
     
     # Kernel para erosión (para limpiar bordes en la máscara)
-    kernel_erode = np.ones((5, 5), np.uint8)
+    kernel_erode = np.ones((8, 8), np.uint8)
     
     for nombre_region, (inicio, fin) in regiones.items():
         # Dibujar línea divisoria para visualizar (línea azul)
@@ -99,23 +99,18 @@ def procesar_mitad(imagen_original, lado='Izquierda'):
         mascara_region = cv2.erode(mascara_botella, kernel_erode, iterations=1)
         
         # Extraer los valores de la imagen original (16 bits) en la región usando la máscara
-        # La máscara es la misma (dimensiones) que la imagen de segmentación, pero se aplica a la imagen original.
         valores_region = imagen_original[mascara_region == 255]
         
         if valores_region.size > 0:
             temp_promedio = np.mean(valores_region)
-            temp_maxima = np.max(valores_region)
-            temp_minima = np.min(valores_region)
             temp_mediana = np.median(valores_region)
             
-            etiqueta_stats = f"Prom={temp_promedio:.1f} Max={temp_maxima:.1f} Min={temp_minima:.1f} Med={temp_mediana:.1f}"
+            etiqueta_stats = f"Prom={temp_promedio:.1f} Med={temp_mediana:.1f}"
             pos_stats = (x + 5, inicio + (fin - inicio) // 2 + 25)
             cv2.putText(imagen_dibujo, etiqueta_stats, pos_stats, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
             
             print(f"\n  Región: {nombre_region}")
             print(f"    Temperatura promedio: {temp_promedio:.2f}")
-            print(f"    Temperatura máxima:   {temp_maxima:.2f}")
-            print(f"    Temperatura mínima:   {temp_minima:.2f}")
             print(f"    Temperatura mediana:  {temp_mediana:.2f}")
         else:
             print(f"\n  Región: {nombre_region} - No se encontraron datos.")
