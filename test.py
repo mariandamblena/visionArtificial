@@ -4,7 +4,7 @@ import os
 
 # --- Configuración y carga de la imagen "1.png" ---
 directorio_actual = os.path.dirname(os.path.abspath(__file__))
-ruta_imagen = os.path.join(directorio_actual, 'capturas', '18.png')
+ruta_imagen = os.path.join(directorio_actual, 'capturas', '1.png')
 
 if not os.path.isfile(ruta_imagen):
     print(f'La imagen no se encontró en la ruta: {ruta_imagen}')
@@ -23,48 +23,49 @@ imagen_original_right = imagen_original_full[:, ancho_total // 2:]
 
 # --- Función para procesar una mitad ---
 def procesar_mitad(imagen_original, lado='Izquierda'):
-    # Normalizar para visualización (8 bits)
-    imagen_visualizacion = cv2.normalize(imagen_original, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
+    # Para segmentación y visualización, se normaliza la imagen original (16 bits) a 8 bits.
+    # Esta versión normalizada se usará únicamente para la detección de contornos.
+    imagen_seg = cv2.normalize(imagen_original, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
     
-    # Obtener imagen en escala de grises
-    if len(imagen_visualizacion.shape) == 3 and imagen_visualizacion.shape[2] == 3:
-        imagen_gris = cv2.cvtColor(imagen_visualizacion, cv2.COLOR_BGR2GRAY)
+    # Obtener imagen en escala de grises para segmentación
+    if len(imagen_seg.shape) == 3 and imagen_seg.shape[2] == 3:
+        imagen_gris = cv2.cvtColor(imagen_seg, cv2.COLOR_BGR2GRAY)
     else:
-        imagen_gris = imagen_visualizacion.copy()
+        imagen_gris = imagen_seg.copy()
 
     # Preparar imagen para dibujar resultados (convertida a BGR)
-    if len(imagen_visualizacion.shape) == 2 or imagen_visualizacion.shape[2] == 1:
-        imagen_dibujo = cv2.cvtColor(imagen_visualizacion, cv2.COLOR_GRAY2BGR)
+    if len(imagen_seg.shape) == 2 or imagen_seg.shape[2] == 1:
+        imagen_dibujo = cv2.cvtColor(imagen_seg, cv2.COLOR_GRAY2BGR)
     else:
-        imagen_dibujo = imagen_visualizacion.copy()
+        imagen_dibujo = imagen_seg.copy()
 
-    # Preprocesamiento: desenfoque y umbralización (Otsu)
+    # Preprocesamiento: desenfoque y umbralización (Otsu) sobre la imagen de segmentación (8 bits)
     imagen_suavizada = cv2.GaussianBlur(imagen_gris, (5, 5), 0)
     _, imagen_binaria = cv2.threshold(imagen_suavizada, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     
     # Invertir la imagen binaria si el área blanca es muy pequeña
     area_blanca = cv2.countNonZero(imagen_binaria)
-    area_total = imagen_binaria.shape[0] * imagen_binaria.shape[1]
-    if area_blanca < 0.1 * area_total:
+    area_total_bin = imagen_binaria.shape[0] * imagen_binaria.shape[1]
+    if area_blanca < 0.1 * area_total_bin:
         imagen_binaria = cv2.bitwise_not(imagen_binaria)
     
-    # Encontrar contornos en la imagen binaria
+    # Encontrar contornos en la imagen binaria (8 bits)
     contornos, _ = cv2.findContours(imagen_binaria, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     contornos_botellas = [cnt for cnt in contornos if cv2.contourArea(cnt) > 1000]
     if len(contornos_botellas) == 0:
         print(f"No se encontró ninguna botella en la mitad {lado}.")
         return None
-    # Seleccionar el contorno de mayor área (se asume que es la botella)
+    # Seleccionar el contorno de mayor área (asumimos que es la botella)
     contorno_botella = max(contornos_botellas, key=cv2.contourArea)
     
-    # Dibujar el contorno en verde
+    # Dibujar el contorno en verde sobre la imagen de dibujo
     cv2.drawContours(imagen_dibujo, [contorno_botella], -1, (0, 255, 0), 2)
 
-    # Obtener la caja delimitadora del contorno
+    # Obtener la caja delimitadora del contorno (en la imagen de segmentación)
     x, y, w, h = cv2.boundingRect(contorno_botella)
     
     # Dividir el área interna del contorno en tres regiones horizontales.
-    # Se asume que: 
+    # Se asume que:
     #  - La parte superior (valores de y menores) es "Pico y Cuello"
     #  - La parte central es "Cuerpo"
     #  - La parte inferior (valores de y mayores) es "Base"
@@ -77,27 +78,28 @@ def procesar_mitad(imagen_original, lado='Izquierda'):
     
     print(f"\nResultados para la botella en la mitad {lado}:")
     
-    # Definir un kernel para erosionar la máscara y evitar valores extremos en los bordes
+    # Kernel para erosión (para limpiar bordes en la máscara)
     kernel_erode = np.ones((5, 5), np.uint8)
     
     for nombre_region, (inicio, fin) in regiones.items():
         # Dibujar línea divisoria para visualizar (línea azul)
         cv2.line(imagen_dibujo, (x, fin), (x + w, fin), (255, 0, 0), 2)
-        # Colocar etiqueta básica en el centro de la región
+        # Etiqueta base (nombre) en el centro de la región
         pos_texto = (x + 5, inicio + (fin - inicio) // 2)
         cv2.putText(imagen_dibujo, nombre_region, pos_texto, cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
         
-        # Crear una máscara que cubra el contorno de la botella
+        # Crear una máscara que cubra el contorno de la botella (usando la imagen de segmentación, 8 bits)
         mascara_botella = np.zeros(imagen_gris.shape, dtype=np.uint8)
         cv2.drawContours(mascara_botella, [contorno_botella], -1, 255, thickness=cv2.FILLED)
         # Limitar la máscara a la franja horizontal de la región
         mascara_botella[:inicio, :] = 0
         mascara_botella[fin:, :] = 0
         
-        # Erosionar la máscara para evitar que los bordes introduzcan valores extremos
+        # Erosionar la máscara para eliminar valores extremos en los bordes
         mascara_region = cv2.erode(mascara_botella, kernel_erode, iterations=1)
         
-        # Extraer los valores de la imagen original (16 bits) en la región
+        # Extraer los valores de la imagen original (16 bits) en la región usando la máscara
+        # La máscara es la misma (dimensiones) que la imagen de segmentación, pero se aplica a la imagen original.
         valores_region = imagen_original[mascara_region == 255]
         
         if valores_region.size > 0:
@@ -120,7 +122,7 @@ def procesar_mitad(imagen_original, lado='Izquierda'):
     
     return imagen_dibujo
 
-# --- Procesar sólo la imagen 1.png ---
+# --- Procesar sólo la imagen "1.png" ---
 ruta_imagen = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'capturas', '1.png')
 imagen_original_full = cv2.imread(ruta_imagen, cv2.IMREAD_UNCHANGED)
 if imagen_original_full is None:
