@@ -78,13 +78,13 @@ def procesar_mitad(imagen_original, lado='Izquierda'):
     
     print(f"\nResultados para la botella en la mitad {lado}:")
     
-    # Kernel para erosión (para limpiar bordes en la máscara)
+    # Definir un kernel para erosión (para limpiar bordes en la máscara)
     kernel_erode = np.ones((8, 8), np.uint8)
     
     for nombre_region, (inicio, fin) in regiones.items():
         # Dibujar línea divisoria para visualizar (línea azul)
         cv2.line(imagen_dibujo, (x, fin), (x + w, fin), (255, 0, 0), 2)
-        # Etiqueta base (nombre) en el centro de la región
+        # Etiqueta básica en el centro de la región
         pos_texto = (x + 5, inicio + (fin - inicio) // 2)
         cv2.putText(imagen_dibujo, nombre_region, pos_texto, cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
         
@@ -97,6 +97,13 @@ def procesar_mitad(imagen_original, lado='Izquierda'):
         
         # Erosionar la máscara para eliminar valores extremos en los bordes
         mascara_region = cv2.erode(mascara_botella, kernel_erode, iterations=1)
+        
+        # --- Debug: mostrar el negativo de la máscara ---
+        mascara_negativa = cv2.bitwise_not(mascara_region)
+        cv2.imshow(f"Negative mask {lado} - {nombre_region}", mascara_negativa)
+        cv2.waitKey(0)
+        cv2.destroyWindow(f"Negative mask {lado} - {nombre_region}")
+        # --------------------------------------------
         
         # Extraer los valores de la imagen original (16 bits) en la región usando la máscara
         valores_region = imagen_original[mascara_region == 255]
